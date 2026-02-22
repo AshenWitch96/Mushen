@@ -1,5 +1,5 @@
 require('dotenv').config()
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits } = require('discord.js')
 
 const client = new Client({
   intents: [
@@ -7,53 +7,84 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent
   ]
-});
+})
 
-const SOFI_BOT_ID = '853629533855809596';
-const TIMER = 8 * 60 * 1000;
+const SOFI_BOT_ID = '853629533855809596'
+const DROP_LISTEN_TIME = 30 * 1000
+const COOLDOWN_TIME = 8 * 60 * 1000
 
-const pendingSD = new Map();
-const cooldowns = new Map();
+const activeListeners = new Map()
+
+client.once('ready', () => {
+  console.log(`✅ Logged in as ${client.user.tag}`)
+})
 
 client.on('messageCreate', async (message) => {
 
-  if (message.author.bot) return;
+  // ===== USER SD COMMAND =====
+  if (!message.author.bot) {
 
-  if (message.content.toLowerCase() !== 'sd') return;
+    const content = message.content.toLowerCase()
 
-  const userId = message.author.id;
+    if (content !== 'sd') return
 
-  if (cooldowns.has(userId) && cooldowns.get(userId) > Date.now()) {
-    return;
+    const channelId = message.channel.id
+    const userId = message.author.id
+
+    console.log(`📝 SD command from ${message.author.tag}`)
+
+    if (activeListeners.has(channelId)) {
+      console.log(`⚠️ Already listening here`)
+      return
+    }
+
+    console.log(`👂 Listening for Sofi drop for 30 seconds...`)
+
+    const timeout = setTimeout(() => {
+      console.log(`⌛ No drop detected — stopped listening`)
+      activeListeners.delete(channelId)
+    }, DROP_LISTEN_TIME)
+
+    activeListeners.set(channelId, { userId, timeout })
   }
 
-  pendingSD.set(message.id, {
-    userId: userId,
-    channelId: message.channel.id,
-    createdAt: Date.now()
-  });
-});
+  // ===== SOFI MESSAGE =====
+  if (message.author.id === SOFI_BOT_ID) {
 
-client.on('messageCreate', async (message) => {
+    const channelId = message.channel.id
 
-  if (message.author.id !== SOFI_BOT_ID) return;
+    if (!activeListeners.has(channelId)) return
 
-  if (!message.content.toLowerCase().includes('dropping cards')) return;
+    // Normalize message (remove markdown like **)
+    const normalized = message.content
+      .toLowerCase()
+      .replace(/\*/g, '')
 
-  if (!message.reference?.messageId) return;
+    console.log(`🤖 Sofi message detected:`)
+    console.log(normalized)
 
-  const data = pendingSD.get(message.reference.messageId);
-  if (!data) return;
+    if (!normalized.includes('is dropping cards')) {
+      console.log(`❌ Not drop message`)
+      return
+    }
 
-  const channel = await client.channels.fetch(data.channelId).catch(() => null);
-  if (!channel) return;
+    console.log(`🎴 Drop detected — starting cooldown timer`)
 
-  setTimeout(async () => {
-    await channel.send(`<@${data.userId}> you are ready to drop cards in sofi`);
-  }, TIMER);
+    const data = activeListeners.get(channelId)
 
-  cooldowns.set(data.userId, Date.now() + TIMER);
-  pendingSD.delete(message.reference.messageId);
-});
+    clearTimeout(data.timeout)
+    activeListeners.delete(channelId)
 
-client.login(process.env.TOKEN);
+    setTimeout(async () => {
+      try {
+        await message.channel.send(`<@${data.userId}> you can drop again in Sofi`)
+        console.log(`🔔 Reminder sent`)
+      } catch (err) {
+        console.log(`❌ Reminder failed`, err)
+      }
+    }, COOLDOWN_TIME)
+  }
+
+})
+
+client.login(process.env.TOKEN)
