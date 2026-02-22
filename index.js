@@ -14,8 +14,8 @@ client.on('messageCreate', async (message) => {
 
   if (message.content.toLowerCase().includes('sd')) {
     setTimeout(() => {
-      message.reply('Reply after 7 minutes ⏰')
-    }, 7 * 60 * 1000)
+      message.reply('Reply after 8 minutes ⏰')
+    }, 8 * 60 * 1000)
   }
 })
 
